@@ -22,12 +22,14 @@ main(List<String> args) async {
     error('No "pubspec.yaml" found at ${pubspecFile.path}');
     _usage();
   }
-
+  var pubPort;
   var testsRunning = false;
   // Run pub serve, and wait for significant messages.
-  final pubServeProcess = await Process.start('pub', const ['serve', 'test']);
-  var stdoutFuture =
-      pubServeProcess.stdout.map(UTF8.decode).listen((message) async {
+  final pubServeProcess = await Process.start('pub', ['serve', 'test', '--port=${parsedArgs['port']}']);
+  var stdoutFuture = pubServeProcess.stdout.map(UTF8.decode).listen((message) async {
+    if (message.contains('Serving')) {
+      pubPort = message.trim().split(':').last;
+    }
     if (message.contains('Serving angular_testing')) {
       log('Using pub serve to generate AoT code for AngularDart...');
     } else if (message.contains('Build completed successfully')) {
@@ -40,7 +42,8 @@ main(List<String> args) async {
           includeFlags: parsedArgs['run-test-flag'],
           includePlatforms: parsedArgs['platform'],
           testNames: parsedArgs['name'],
-          testPlainNames: parsedArgs['plain-name']);
+          testPlainNames: parsedArgs['plain-name'],
+          testPort: pubPort);
       log('Shutting down...');
       pubServeProcess.kill();
     } else {
@@ -56,12 +59,13 @@ Future<int> _runTests(
     {List<String> includeFlags: const ['aot'],
     List<String> includePlatforms: const ['content-shell'],
     List<String> testNames,
-    List<String> testPlainNames}) async {
-  final args = ['run', 'test', '--pub-serve=8080'];
+    List<String> testPlainNames,
+    String testPort}) async {
+  final args = ['run', 'test', '--pub-serve=${testPort}'];
+  log('The pub serve is running at: ${testPort}');
   args.addAll(includeFlags.map((f) => '-t $f'));
   if (testNames != null) args.addAll(testNames.map((n) => '--name=$n'));
-  if (testPlainNames != null)
-    args.addAll(testPlainNames.map((n) => '--plain-name=$n'));
+  if (testPlainNames != null) args.addAll(testPlainNames.map((n) => '--plain-name=$n'));
   args.add('--platform=${includePlatforms.map((p) => p.trim()).join(' ')}');
   final process = await Process.start('pub', args);
   await Future.wait([
@@ -116,4 +120,10 @@ final _argParser = new ArgParser()
       help: 'A plain-text substring of the name of the test to run.\n'
           'If passed multiple times, tests must match all substrings.',
       allowMultiple: true,
-      splitCommas: false);
+      splitCommas: false)
+  ..addOption(
+    'port',
+    help: 'An int, which should be used to run angular_test.\n',
+    defaultsTo: '0',
+    allowMultiple: false,
+  );
